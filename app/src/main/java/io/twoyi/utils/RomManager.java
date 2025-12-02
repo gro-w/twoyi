@@ -320,7 +320,9 @@ public final class RomManager {
                 File destFile = new File(destDir, entryName);
                 
                 // Additional check: ensure the destination is within the target directory
-                if (!destFile.getCanonicalPath().startsWith(destDirPath)) {
+                String canonicalDestPath = destFile.getCanonicalPath();
+                if (!canonicalDestPath.equals(destDirPath) && 
+                    !canonicalDestPath.startsWith(destDirPath + File.separator)) {
                     Log.w(TAG, "Skipping entry outside target directory: " + entryName);
                     continue;
                 }
