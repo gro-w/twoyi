@@ -45,7 +45,7 @@ jobs:
         mkdir -p app/src/main/assets
         curl -L -o rootfs.7z "https://github.com/topminipie/twoyi/releases/download/0.7.5-rom/rootfs.7z"
         sudo apt-get update && sudo apt-get install -y p7zip-full
-        7z x rootfs.7z -o./rootfs_extracted -snld
+        7z x rootfs.7z -o./rootfs_extracted -snlp
         cd rootfs_extracted/rootfs
         tar -czvf ../../app/src/main/assets/rootfs.tgz .
         cd ../..
