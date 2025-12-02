@@ -307,7 +307,12 @@ public final class RomManager {
                 String entryName = entry.getName();
                 
                 // Validate entry name to prevent path traversal attacks
-                if (entryName.contains("..") || entryName.startsWith("/")) {
+                // Check for common path traversal patterns including encoded sequences
+                if (entryName.contains("..") || entryName.contains("\\") || 
+                    entryName.startsWith("/") || entryName.contains("%2e") ||
+                    entryName.contains("%2E") || entryName.contains("%2f") ||
+                    entryName.contains("%2F") || entryName.contains("%5c") ||
+                    entryName.contains("%5C")) {
                     Log.w(TAG, "Skipping potentially malicious entry: " + entryName);
                     continue;
                 }
