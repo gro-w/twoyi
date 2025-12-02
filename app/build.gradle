@@ -75,13 +75,13 @@ dependencies {
     implementation "com.github.topjohnwu.libsu:core:${libsuVersion}"
 
     // AboutPage
-    implementation 'com.github.nickaknudson:android-about-page:master-SNAPSHOT'
+    implementation 'com.github.medyo:android-about-page:2.0.0'
     implementation 'de.psdev.licensesdialog:licensesdialog:2.2.0'
     implementation 'com.afollestad.material-dialogs:core:0.9.6.0'
     implementation 'moe.feng:AlipayZeroSdk:1.1'
 
     implementation 'org.jdeferred:jdeferred-android-aar:1.2.4'
-    implementation 'com.github.nickaknudson:fab:master-SNAPSHOT'
+    implementation 'com.github.clans:fab:1.6.4'
 
     implementation ('com.github.bumptech.glide:glide:5.0.5')
     annotationProcessor 'com.github.bumptech.glide:compiler:5.0.5'

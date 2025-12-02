@@ -320,10 +320,15 @@ public final class RomManager {
                 File destFile = new File(destDir, entryName);
                 
                 // Additional check: ensure the destination is within the target directory
-                String canonicalDestPath = destFile.getCanonicalPath();
-                if (!canonicalDestPath.equals(destDirPath) && 
-                    !canonicalDestPath.startsWith(destDirPath + File.separator)) {
-                    Log.w(TAG, "Skipping entry outside target directory: " + entryName);
+                try {
+                    String canonicalDestPath = destFile.getCanonicalPath();
+                    if (!canonicalDestPath.equals(destDirPath) && 
+                        !canonicalDestPath.startsWith(destDirPath + File.separator)) {
+                        Log.w(TAG, "Skipping entry outside target directory: " + entryName);
+                        continue;
+                    }
+                } catch (IOException e) {
+                    Log.w(TAG, "Skipping entry due to IOException when resolving canonical path: " + entryName, e);
                     continue;
                 }
                 
@@ -339,7 +344,7 @@ public final class RomManager {
                     
                     try (FileOutputStream fos = new FileOutputStream(destFile);
                          BufferedOutputStream bos = new BufferedOutputStream(fos)) {
-                        byte[] buffer = new byte[8192];
+                        byte[] buffer = new byte[65536];
                         int len;
                         while ((len = tais.read(buffer)) != -1) {
                             bos.write(buffer, 0, len);
