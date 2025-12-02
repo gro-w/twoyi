@@ -99,16 +99,18 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         boolean started = TwoyiStatusManager.getInstance().isStarted();
-        Log.i(TAG, "onCreate: " + savedInstanceState + " isStarted: " + started);
+        Log.i(TAG, "onCreate: savedInstanceState=" + savedInstanceState + ", isStarted=" + started);
 
         if (started) {
             // we have been started, but WTF we are onCreate again? just reboot ourself.
+            Log.w(TAG, "onCreate: already started, rebooting");
             finish();
             RomManager.reboot(this);
             return;
         }
 
         // reset state
+        Log.i(TAG, "onCreate: resetting TwoyiStatusManager state");
         TwoyiStatusManager.getInstance().reset();
 
         NavUtils.hideNavigation(getWindow());
@@ -129,10 +131,11 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
         mLoadingLayout.setVisibility(View.VISIBLE);
         mLoadingView.startAnimation();
 
+        Log.i(TAG, "onCreate: calling UITips.checkForAndroid12");
         UITips.checkForAndroid12(this, this::bootSystem);
 
         mSurfaceView.setOnTouchListener(this);
-
+        Log.i(TAG, "onCreate: completed");
     }
 
     @Override
@@ -153,6 +156,9 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
 
         boolean shouldExtractRom = !romExist || forceInstall || (!use3rdRom && factoryRomUpdated);
 
+        Log.i(TAG, "bootSystem: romExist=" + romExist + ", factoryRomUpdated=" + factoryRomUpdated + 
+              ", forceInstall=" + forceInstall + ", use3rdRom=" + use3rdRom + ", shouldExtractRom=" + shouldExtractRom);
+
         if (shouldExtractRom) {
             Log.i(TAG, "extracting rom...");
 
@@ -171,6 +177,7 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
                 });
             }, "extract-rom").start();
         } else {
+            Log.i(TAG, "ROM exists, skipping extraction, starting boot procedure");
             mRootView.addView(mSurfaceView, 0);
             showBootingProcedure();
         }
@@ -198,6 +205,7 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
     }
 
     private void showBootingProcedure() {
+        Log.i(TAG, "showBootingProcedure: starting boot wait");
         // mLoadingText.setText(R.string.booting_tips);
         mLoadingText.setVisibility(View.GONE);
         mBootLogView.setVisibility(View.VISIBLE);
@@ -206,11 +214,15 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             if (true) {
                 boolean success = false;
                 try {
+                    Log.i(TAG, "showBootingProcedure: waiting for boot (15 seconds timeout)");
                     success = TwoyiStatusManager.getInstance().waitBoot(15, TimeUnit.SECONDS);
-                } catch (Throwable ignored) {
+                    Log.i(TAG, "showBootingProcedure: boot wait completed, success=" + success);
+                } catch (Throwable e) {
+                    Log.e(TAG, "showBootingProcedure: boot wait exception", e);
                 }
 
                 if (!success) {
+                    Log.e(TAG, "showBootingProcedure: boot failed, exiting");
                     LogEvents.trackBootFailure(getApplicationContext());
 
                     runOnUiThread(() -> Toast.makeText(getApplicationContext(), R.string.boot_failed, Toast.LENGTH_SHORT).show());
@@ -224,6 +236,7 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
                 }
             }
 
+            Log.i(TAG, "showBootingProcedure: boot successful, hiding loading view");
             runOnUiThread(() -> {
                 mLoadingView.stopAnimation();
                 mLoadingLayout.setVisibility(View.GONE);

@@ -27,7 +27,6 @@ import de.psdev.licensesdialog.LicensesDialog;
 import de.psdev.licensesdialog.licenses.ApacheSoftwareLicense20;
 import de.psdev.licensesdialog.licenses.BSD2ClauseLicense;
 import de.psdev.licensesdialog.licenses.GnuGeneralPublicLicense20;
-import de.psdev.licensesdialog.licenses.GnuLesserGeneralPublicLicense3;
 import de.psdev.licensesdialog.licenses.MITLicense;
 import de.psdev.licensesdialog.model.Notice;
 import de.psdev.licensesdialog.model.Notices;
@@ -224,8 +223,6 @@ public class AboutActivity extends AppCompatActivity {
         Element license = new Element();
         license.setTitle(getResources().getString(R.string.notices_title));
         Notices notices = new Notices();
-        notices.addNotice(new Notice("AndroidP7Zip", "https://github.com/hzy3774/AndroidP7zip",
-                "7-Zip Copyright (C) 1999-2020 Igor Pavlov.",new GnuLesserGeneralPublicLicense3()));
         notices.addNotice(new Notice("termux-adb-fastboot", "https://github.com/rendiix/termux-adb-fastboot",
                 "Copyright (c) 2022 rendiix", new ApacheSoftwareLicense20()));
         notices.addNotice(new Notice("libsu", "https://github.com/topjohnwu/libsu", "topjohnwu", new ApacheSoftwareLicense20()));
@@ -236,9 +233,9 @@ public class AboutActivity extends AppCompatActivity {
                 "Aidan Follestad (@afollestad)", new ApacheSoftwareLicense20()));
         notices.addNotice(new Notice("FloatingActionButton", "https://github.com/Clans/FloatingActionButton",
                 "Clans", new ApacheSoftwareLicense20()));
-        notices.addNotice(new Notice("android-about-page", "https://github.com/medyo/android-about-page",
+        notices.addNotice(new Notice("android-about-page", "https://github.com/niceurso/android-about-page",
                 "Copyright (c) 2016 Mehdi Sakout", new MITLicense()));
-        notices.addNotice(new Notice("AlipayZeroSdk", "https://github.com/fython/AlipayZeroSdk",
+        notices.addNotice(new Notice("AlipayZeroSdk", "https://github.com/niceurso/AlipayZeroSdk",
                 "Copyright 2016 Fung Go (fython)", new ApacheSoftwareLicense20()));
         notices.addNotice(new Notice("Glide", "https://github.com/bumptech/glide",
                 "Copyright 2014 Google, Inc.", new BSD2ClauseLicense()));
@@ -247,7 +244,7 @@ public class AboutActivity extends AppCompatActivity {
 
         license.setOnClickListener(v -> {
             LicensesDialog licensesDialog = new LicensesDialog.Builder(AboutActivity.this)
-                    .setThemeResourceId(R.style.Theme_AppCompat_DayNight_Dialog_Alert)
+                    .setThemeResourceId(androidx.appcompat.R.style.Theme_AppCompat_DayNight_Dialog_Alert)
                     .setNotices(notices)
                     .build();
             try {

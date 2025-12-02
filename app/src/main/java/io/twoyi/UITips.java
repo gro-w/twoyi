@@ -7,6 +7,7 @@
 package io.twoyi;
 
 import android.app.Activity;
+import android.util.Log;
 
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.RomManager;
@@ -19,6 +20,8 @@ import io.twoyi.utils.UIHelper;
 
 public class UITips {
 
+    private static final String TAG = "UITips";
+
     /**
      * @param activity the context
      * @param bootCallback 不是 Android 12 或者用户点了确认时触发的回调
@@ -26,12 +29,18 @@ public class UITips {
      */
     public static boolean checkForAndroid12(Activity activity, Runnable bootCallback) {
         boolean showTips = AppKV.getBooleanConfig(activity, AppKV.SHOW_ANDROID12_TIPS, true);
+        boolean isAndroid12 = RomManager.isAndroid12();
 
-        if (!RomManager.isAndroid12() || !showTips) {
+        Log.i(TAG, "checkForAndroid12: isAndroid12=" + isAndroid12 + ", showTips=" + showTips);
+
+        if (!isAndroid12 || !showTips) {
+            Log.i(TAG, "checkForAndroid12: calling bootCallback directly");
             bootCallback.run();
+            Log.i(TAG, "checkForAndroid12: bootCallback completed");
             return true;
         }
 
+        Log.i(TAG, "checkForAndroid12: showing Android 12 tips dialog");
         UIHelper.getDialogBuilder(activity)
                 .setTitle(android.R.string.dialog_alert_title)
                 .setMessage(R.string.tips_for_android12)

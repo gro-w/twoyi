@@ -16,11 +16,11 @@ import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
-import com.hzy.libp7zip.P7ZipApi;
 import com.topjohnwu.superuser.Shell;
 
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
-import org.apache.commons.compress.archivers.sevenz.SevenZFile;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -50,7 +50,7 @@ public final class RomManager {
 
     private static final String TAG = "RomManager";
 
-    private static final String ROOTFS_NAME = "rootfs.7z";
+    private static final String ROOTFS_NAME = "rootfs.tgz";
 
     private static final String ROM_INFO_FILE = "rom.ini";
 
@@ -58,15 +58,18 @@ public final class RomManager {
 
     private static final String LOADER_FILE = "libloader.so";
 
-    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.7z";
+    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.tgz";
 
     private RomManager() {
     }
 
     public static void initRootfs(Context context) {
+        Log.i(TAG, "initRootfs: starting initialization");
         File propFile = getVendorPropFile(context);
         String language = Locale.getDefault().getLanguage();
         String country = Locale.getDefault().getCountry();
+
+        Log.i(TAG, "initRootfs: language=" + language + ", country=" + country);
 
         Properties properties = new Properties();
 
@@ -75,32 +78,43 @@ public final class RomManager {
 
         TimeZone timeZone = TimeZone.getDefault();
         String timeZoneID = timeZone.getID();
-        Log.i(TAG, "timezone: " + timeZoneID);
+        Log.i(TAG, "initRootfs: timezone=" + timeZoneID);
         properties.setProperty("persist.sys.timezone", timeZoneID);
 
-        properties.setProperty("ro.sf.lcd_density", String.valueOf(DisplayMetrics.DENSITY_DEVICE_STABLE));
+        int density = DisplayMetrics.DENSITY_DEVICE_STABLE;
+        Log.i(TAG, "initRootfs: lcd_density=" + density);
+        properties.setProperty("ro.sf.lcd_density", String.valueOf(density));
 
         try (Writer writer = new FileWriter(propFile)) {
             properties.store(writer, null);
-        } catch (IOException ignored) {
+            Log.i(TAG, "initRootfs: properties written to " + propFile.getAbsolutePath());
+        } catch (IOException e) {
+            Log.e(TAG, "initRootfs: failed to write properties", e);
         }
     }
 
     public static void ensureBootFiles(Context context) {
+        Log.i(TAG, "ensureBootFiles: starting");
 
         // <rootdir>/dev/
         File devDir = new File(getRootfsDir(context), "dev");
+        Log.i(TAG, "ensureBootFiles: creating dev directories");
         ensureDir(new File(devDir, "input"));
         ensureDir(new File(devDir, "socket"));
         ensureDir(new File(devDir, "maps"));
 
         ensureDir(new File(context.getDataDir(), "socket"));
 
+        Log.i(TAG, "ensureBootFiles: creating loader symlink");
         createLoaderSymlink(context);
 
+        Log.i(TAG, "ensureBootFiles: killing orphan processes");
         killOrphanProcess();
 
+        Log.i(TAG, "ensureBootFiles: saving last kmsg");
         saveLastKmsg(context);
+        
+        Log.i(TAG, "ensureBootFiles: completed");
     }
 
     private static void createLoaderSymlink(Context context) {
@@ -153,8 +167,24 @@ public final class RomManager {
     public static final RomInfo DEFAULT_ROM_INFO = new RomInfo();
 
     public static boolean romExist(Context context) {
-        File initFile = new File(getRootfsDir(context), "init");
-        return initFile.exists();
+        File rootfsDir = getRootfsDir(context);
+        File initFile = new File(rootfsDir, "init");
+        // Also check for critical system files to detect corrupted installation
+        File appProcess64 = new File(rootfsDir, "system/bin/app_process64");
+        File systemBuildProp = new File(rootfsDir, "system/build.prop");
+        
+        Log.i(TAG, "romExist: checking rootfsDir=" + rootfsDir.getAbsolutePath());
+        Log.i(TAG, "romExist: init exists=" + initFile.exists());
+        Log.i(TAG, "romExist: app_process64 exists=" + appProcess64.exists());
+        Log.i(TAG, "romExist: build.prop exists=" + systemBuildProp.exists());
+        
+        // ROM exists only if init AND critical system files exist
+        boolean exists = initFile.exists() && appProcess64.exists() && systemBuildProp.exists();
+        if (initFile.exists() && !exists) {
+            Log.w(TAG, "romExist: ROM appears corrupted - init exists but critical files missing. Will re-extract.");
+        }
+        Log.i(TAG, "romExist: returning " + exists);
+        return exists;
     }
 
     public static boolean needsUpgrade(Context context) {
@@ -184,14 +214,24 @@ public final class RomManager {
     }
 
     public static RomInfo getRomInfo(File rom) {
-        try (SevenZFile zFile = new SevenZFile(rom)) {
+        try (FileInputStream fis = new FileInputStream(rom);
+             BufferedInputStream bis = new BufferedInputStream(fis);
+             GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
+             TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
 
-            SevenZArchiveEntry entry;
+            TarArchiveEntry entry;
 
-            while ((entry = zFile.getNextEntry()) != null) {
-                if (entry.getName().equals("rootfs/rom.ini")) {
+            while ((entry = tais.getNextTarEntry()) != null) {
+                // Check for rom.ini in either root or rootfs directory
+                String entryName = entry.getName();
+                if (entryName.equals("rom.ini") || entryName.equals("rootfs/rom.ini")) {
                     byte[] content = new byte[(int) entry.getSize()];
-                    zFile.read(content, 0, content.length);
+                    int bytesRead = 0;
+                    while (bytesRead < content.length) {
+                        int read = tais.read(content, bytesRead, content.length - bytesRead);
+                        if (read < 0) break;
+                        bytesRead += read;
+                    }
                     ByteArrayInputStream bais = new ByteArrayInputStream(content);
                     return getRomInfo(bais);
                 }
@@ -212,13 +252,18 @@ public final class RomManager {
     }
 
     public static void extractRootfs(Context context, boolean romExist, boolean needsUpgrade, boolean forceInstall, boolean use3rdRom) {
+        Log.i(TAG, "extractRootfs: starting extraction, romExist=" + romExist + ", needsUpgrade=" + needsUpgrade + 
+              ", forceInstall=" + forceInstall + ", use3rdRom=" + use3rdRom);
 
         // force remove system dir to avoiding wired issues
+        Log.i(TAG, "extractRootfs: removing system partition");
         removeSystemPartition(context);
+        Log.i(TAG, "extractRootfs: removing vendor partition");
         removeVendorPartition(context);
 
         if (!romExist) {
             // first init
+            Log.i(TAG, "extractRootfs: ROM does not exist, extracting from assets");
             extractRootfsInAssets(context);
             return;
         }
@@ -226,32 +271,39 @@ public final class RomManager {
         if (forceInstall) {
             if (use3rdRom) {
                 // install 3rd rom
+                Log.i(TAG, "extractRootfs: force install 3rd party ROM");
                 boolean success = extract3rdRootfs(context);
                 if (!success) {
+                    Log.e(TAG, "extractRootfs: 3rd party ROM extraction failed");
                     showRootfsInstallationFailure(context);
                     return;
                 }
             } else {
                 // factory reset!!
+                Log.i(TAG, "extractRootfs: factory reset, extracting from assets");
                 if (!extractRootfsInAssets(context)) {
+                    Log.e(TAG, "extractRootfs: factory reset extraction failed");
                     showRootfsInstallationFailure(context);
                     return;
                 }
             }
 
             // force install finish, reset the state.
+            Log.i(TAG, "extractRootfs: force install completed, resetting flag");
             AppKV.setBooleanConfig(context, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
         } else {
             if (use3rdRom) {
-                Log.w(TAG, "WTF? 3rd ROM must be force install!");
+                Log.w(TAG, "extractRootfs: WTF? 3rd ROM must be force install!");
             }
             if (needsUpgrade) {
-                Log.i(TAG, "upgrade factory rom..");
+                Log.i(TAG, "extractRootfs: upgrading factory ROM");
                 if (!extractRootfsInAssets(context)) {
+                    Log.e(TAG, "extractRootfs: upgrade extraction failed");
                     showRootfsInstallationFailure(context);
                 }
             }
         }
+        Log.i(TAG, "extractRootfs: completed");
     }
 
     private static void showRootfsInstallationFailure(Context context) {
@@ -279,20 +331,69 @@ public final class RomManager {
         return err == 0;
     }
 
-    public static int extractRootfs(Context context, File rootfs7z) {
+    public static int extractRootfs(Context context, File rootfsTgz) {
+        File outputDir = getRootfsDir(context);
+        // Ensure the rootfs directory exists
+        if (!outputDir.exists() && !outputDir.mkdirs()) {
+            Log.e(TAG, "Failed to create rootfs directory: " + outputDir);
+            return -1;
+        }
+        try (FileInputStream fis = new FileInputStream(rootfsTgz);
+             BufferedInputStream bis = new BufferedInputStream(fis);
+             GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
+             TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
 
-        int cpu = Runtime.getRuntime().availableProcessors();
-        return P7ZipApi.executeCommand(String.format(Locale.US, "7z x -mmt=%d -aoa '%s' '-o%s'",
-                cpu, rootfs7z, context.getDataDir()));
+            TarArchiveEntry entry;
+            while ((entry = tais.getNextTarEntry()) != null) {
+                File outputFile = new File(outputDir, entry.getName());
+
+                if (entry.isDirectory()) {
+                    if (!outputFile.exists() && !outputFile.mkdirs()) {
+                        Log.e(TAG, "Failed to create directory: " + outputFile);
+                    }
+                } else if (entry.isSymbolicLink()) {
+                    // Handle symbolic links before regular files
+                    File parent = outputFile.getParentFile();
+                    if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                        Log.e(TAG, "Failed to create parent directory: " + parent);
+                    }
+                    String linkName = entry.getLinkName();
+                    try {
+                        Files.deleteIfExists(outputFile.toPath());
+                        Files.createSymbolicLink(outputFile.toPath(), Paths.get(linkName));
+                    } catch (IOException e) {
+                        Log.e(TAG, "Failed to create symlink: " + outputFile + " -> " + linkName, e);
+                    }
+                } else {
+                    // Ensure parent directory exists
+                    File parent = outputFile.getParentFile();
+                    if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                        Log.e(TAG, "Failed to create parent directory: " + parent);
+                    }
+
+                    try (OutputStream os = new BufferedOutputStream(new FileOutputStream(outputFile))) {
+                        byte[] buffer = new byte[8192];
+                        int count;
+                        while ((count = tais.read(buffer)) != -1) {
+                            os.write(buffer, 0, count);
+                        }
+                    }
+                }
+            }
+            return 0;
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to extract rootfs", e);
+            return -1;
+        }
     }
 
     public static boolean extractRootfsInAssets(Context context) {
 
         // read assets
         long t1 = SystemClock.elapsedRealtime();
-        File rootfs7z = context.getFileStreamPath(ROOTFS_NAME);
+        File rootfsTgz = context.getFileStreamPath(ROOTFS_NAME);
         try (InputStream inputStream = new BufferedInputStream(context.getAssets().open(ROOTFS_NAME));
-             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfs7z))) {
+             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfsTgz))) {
             byte[] buffer = new byte[10240];
             int count;
             while ((count = inputStream.read(buffer)) > 0) {
@@ -303,11 +404,11 @@ public final class RomManager {
         }
         long t2 = SystemClock.elapsedRealtime();
 
-        int ret = extractRootfs(context, rootfs7z);
+        int ret = extractRootfs(context, rootfsTgz);
 
         long t3 = SystemClock.elapsedRealtime();
 
-        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " un7z: " + (t3 - t2) + "ret: " + ret);
+        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " untgz: " + (t3 - t2) + "ret: " + ret);
 
         return ret == 0;
     }

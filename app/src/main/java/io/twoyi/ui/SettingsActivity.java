@@ -38,6 +38,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 
 import io.twoyi.R;
+import io.twoyi.Render2Activity;
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.LogEvents;
 import io.twoyi.utils.RomManager;
@@ -65,7 +66,8 @@ public class SettingsActivity extends AppCompatActivity {
         ActionBar actionBar = getSupportActionBar();
 
         if (actionBar != null) {
-            actionBar.setDisplayHomeAsUpEnabled(true);
+            // Don't show back button when this is the launcher activity
+            actionBar.setDisplayHomeAsUpEnabled(false);
             actionBar.setBackgroundDrawable(getResources().getDrawable(R.color.colorPrimary));
             actionBar.setTitle(R.string.title_settings);
         }
@@ -97,6 +99,7 @@ public class SettingsActivity extends AppCompatActivity {
         public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
 
+            Preference startContainer = findPreference(R.string.settings_key_start_container);
             Preference importApp = findPreference(R.string.settings_key_import_app);
             Preference export = findPreference(R.string.settings_key_manage_files);
 
@@ -108,6 +111,11 @@ public class SettingsActivity extends AppCompatActivity {
             Preference donate = findPreference(R.string.settings_key_donate);
             Preference sendLog = findPreference(R.string.settings_key_sendlog);
             Preference about = findPreference(R.string.settings_key_about);
+
+            startContainer.setOnPreferenceClickListener(preference -> {
+                UIHelper.startActivity(getContext(), Render2Activity.class);
+                return true;
+            });
 
             importApp.setOnPreferenceClickListener(preference -> {
                 UIHelper.startActivity(getContext(), SelectAppActivity.class);

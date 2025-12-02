@@ -92,4 +92,8 @@
     <string name="settings_key_shutdown">Shutdown</string>
     <string name="settings_key_reboot">Reboot</string>
     <string name="replace_rom_unofficial_tips">Sorry, please edit the rom info and avoid using official author name :)</string>
+    <string name="settings_category_container">Container</string>
+    <string name="settings_key_start_container">Start Container</string>
+    <string name="settings_start_container_summary">Launch the twoyi container</string>
+    <string name="notices_title">Open Source Notices</string>
 </resources>
