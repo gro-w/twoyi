@@ -16,11 +16,11 @@ import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
-import com.hzy.libp7zip.P7ZipApi;
 import com.topjohnwu.superuser.Shell;
 
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
-import org.apache.commons.compress.archivers.sevenz.SevenZFile;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -50,7 +50,7 @@ public final class RomManager {
 
     private static final String TAG = "RomManager";
 
-    private static final String ROOTFS_NAME = "rootfs.7z";
+    private static final String ROOTFS_NAME = "rootfs.tar.gz";
 
     private static final String ROM_INFO_FILE = "rom.ini";
 
@@ -58,7 +58,7 @@ public final class RomManager {
 
     private static final String LOADER_FILE = "libloader.so";
 
-    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.7z";
+    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.tar.gz";
 
     private RomManager() {
     }
@@ -184,14 +184,23 @@ public final class RomManager {
     }
 
     public static RomInfo getRomInfo(File rom) {
-        try (SevenZFile zFile = new SevenZFile(rom)) {
+        try (FileInputStream fis = new FileInputStream(rom);
+             BufferedInputStream bis = new BufferedInputStream(fis);
+             GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
+             TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
 
-            SevenZArchiveEntry entry;
-
-            while ((entry = zFile.getNextEntry()) != null) {
-                if (entry.getName().equals("rootfs/rom.ini")) {
+            TarArchiveEntry entry;
+            while ((entry = tais.getNextEntry()) != null) {
+                if (entry.getName().equals("rom.ini")) {
                     byte[] content = new byte[(int) entry.getSize()];
-                    zFile.read(content, 0, content.length);
+                    int offset = 0;
+                    int remaining = content.length;
+                    while (remaining > 0) {
+                        int read = tais.read(content, offset, remaining);
+                        if (read < 0) break;
+                        offset += read;
+                        remaining -= read;
+                    }
                     ByteArrayInputStream bais = new ByteArrayInputStream(content);
                     return getRomInfo(bais);
                 }
@@ -279,20 +288,57 @@ public final class RomManager {
         return err == 0;
     }
 
-    public static int extractRootfs(Context context, File rootfs7z) {
+    public static int extractRootfs(Context context, File rootfsTarGz) {
+        try (FileInputStream fis = new FileInputStream(rootfsTarGz);
+             BufferedInputStream bis = new BufferedInputStream(fis);
+             GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
+             TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
 
-        int cpu = Runtime.getRuntime().availableProcessors();
-        return P7ZipApi.executeCommand(String.format(Locale.US, "7z x -mmt=%d -aoa '%s' '-o%s'",
-                cpu, rootfs7z, context.getDataDir()));
+            File destDir = getRootfsDir(context);
+            if (!destDir.exists() && !destDir.mkdirs()) {
+                Log.e(TAG, "Failed to create rootfs directory: " + destDir);
+                return -1;
+            }
+            
+            TarArchiveEntry entry;
+            while ((entry = tais.getNextEntry()) != null) {
+                File destFile = new File(destDir, entry.getName());
+                
+                if (entry.isDirectory()) {
+                    if (!destFile.exists() && !destFile.mkdirs()) {
+                        Log.e(TAG, "Failed to create directory: " + destFile);
+                    }
+                } else {
+                    File parent = destFile.getParentFile();
+                    if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                        Log.e(TAG, "Failed to create parent directory: " + parent);
+                    }
+                    
+                    try (FileOutputStream fos = new FileOutputStream(destFile);
+                         BufferedOutputStream bos = new BufferedOutputStream(fos)) {
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = tais.read(buffer)) != -1) {
+                            bos.write(buffer, 0, len);
+                        }
+                    }
+                }
+            }
+            return 0;
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to extract rootfs", e);
+            LogEvents.trackError(e);
+            return -1;
+        }
     }
 
     public static boolean extractRootfsInAssets(Context context) {
 
         // read assets
         long t1 = SystemClock.elapsedRealtime();
-        File rootfs7z = context.getFileStreamPath(ROOTFS_NAME);
+        File rootfsTarGz = context.getFileStreamPath(ROOTFS_NAME);
         try (InputStream inputStream = new BufferedInputStream(context.getAssets().open(ROOTFS_NAME));
-             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfs7z))) {
+             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfsTarGz))) {
             byte[] buffer = new byte[10240];
             int count;
             while ((count = inputStream.read(buffer)) > 0) {
@@ -303,11 +349,11 @@ public final class RomManager {
         }
         long t2 = SystemClock.elapsedRealtime();
 
-        int ret = extractRootfs(context, rootfs7z);
+        int ret = extractRootfs(context, rootfsTarGz);
 
         long t3 = SystemClock.elapsedRealtime();
 
-        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " un7z: " + (t3 - t2) + "ret: " + ret);
+        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " extract: " + (t3 - t2) + " ret: " + ret);
 
         return ret == 0;
     }
