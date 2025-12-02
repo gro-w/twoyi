@@ -320,19 +320,41 @@ public final class RomManager {
                 File destFile = new File(destDir, entryName);
                 
                 // Additional check: ensure the destination is within the target directory
-                try {
-                    String canonicalDestPath = destFile.getCanonicalPath();
-                    if (!canonicalDestPath.equals(destDirPath) && 
-                        !canonicalDestPath.startsWith(destDirPath + File.separator)) {
-                        Log.w(TAG, "Skipping entry outside target directory: " + entryName);
+                // Skip this check for symlinks as they may point outside initially
+                if (!entry.isSymbolicLink()) {
+                    try {
+                        String canonicalDestPath = destFile.getCanonicalPath();
+                        if (!canonicalDestPath.equals(destDirPath) && 
+                            !canonicalDestPath.startsWith(destDirPath + File.separator)) {
+                            Log.w(TAG, "Skipping entry outside target directory: " + entryName);
+                            continue;
+                        }
+                    } catch (IOException e) {
+                        Log.w(TAG, "Skipping entry due to IOException when resolving canonical path: " + entryName, e);
                         continue;
                     }
-                } catch (IOException e) {
-                    Log.w(TAG, "Skipping entry due to IOException when resolving canonical path: " + entryName, e);
-                    continue;
                 }
                 
-                if (entry.isDirectory()) {
+                if (entry.isSymbolicLink()) {
+                    // Handle symbolic links
+                    File parent = destFile.getParentFile();
+                    if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                        Log.e(TAG, "Failed to create parent directory for symlink: " + parent);
+                    }
+                    
+                    String linkTarget = entry.getLinkName();
+                    Path linkPath = destFile.toPath();
+                    Path targetPath = Paths.get(linkTarget);
+                    
+                    try {
+                        // Delete existing file/link if exists
+                        Files.deleteIfExists(linkPath);
+                        // Create symbolic link
+                        Files.createSymbolicLink(linkPath, targetPath);
+                    } catch (IOException e) {
+                        Log.w(TAG, "Failed to create symbolic link: " + entryName + " -> " + linkTarget, e);
+                    }
+                } else if (entry.isDirectory()) {
                     if (!destFile.exists() && !destFile.mkdirs()) {
                         Log.e(TAG, "Failed to create directory: " + destFile);
                     }
@@ -349,6 +371,21 @@ public final class RomManager {
                         while ((len = tais.read(buffer)) != -1) {
                             bos.write(buffer, 0, len);
                         }
+                    }
+                    
+                    // Preserve file permissions from tar archive
+                    int mode = entry.getMode();
+                    if (mode != 0) {
+                        // Set executable permission if any execute bit is set (owner, group, or other)
+                        boolean isExecutable = (mode & 0111) != 0;
+                        // Set readable permission if any read bit is set
+                        boolean isReadable = (mode & 0444) != 0;
+                        // Set writable permission if owner write bit is set
+                        boolean isWritable = (mode & 0200) != 0;
+                        
+                        destFile.setExecutable(isExecutable, false);
+                        destFile.setReadable(isReadable, false);
+                        destFile.setWritable(isWritable, false);
                     }
                 }
             }
