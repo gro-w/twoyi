@@ -64,9 +64,12 @@ public final class RomManager {
     }
 
     public static void initRootfs(Context context) {
+        Log.i(TAG, "initRootfs: starting initialization");
         File propFile = getVendorPropFile(context);
         String language = Locale.getDefault().getLanguage();
         String country = Locale.getDefault().getCountry();
+
+        Log.i(TAG, "initRootfs: language=" + language + ", country=" + country);
 
         Properties properties = new Properties();
 
@@ -75,32 +78,43 @@ public final class RomManager {
 
         TimeZone timeZone = TimeZone.getDefault();
         String timeZoneID = timeZone.getID();
-        Log.i(TAG, "timezone: " + timeZoneID);
+        Log.i(TAG, "initRootfs: timezone=" + timeZoneID);
         properties.setProperty("persist.sys.timezone", timeZoneID);
 
-        properties.setProperty("ro.sf.lcd_density", String.valueOf(DisplayMetrics.DENSITY_DEVICE_STABLE));
+        int density = DisplayMetrics.DENSITY_DEVICE_STABLE;
+        Log.i(TAG, "initRootfs: lcd_density=" + density);
+        properties.setProperty("ro.sf.lcd_density", String.valueOf(density));
 
         try (Writer writer = new FileWriter(propFile)) {
             properties.store(writer, null);
-        } catch (IOException ignored) {
+            Log.i(TAG, "initRootfs: properties written to " + propFile.getAbsolutePath());
+        } catch (IOException e) {
+            Log.e(TAG, "initRootfs: failed to write properties", e);
         }
     }
 
     public static void ensureBootFiles(Context context) {
+        Log.i(TAG, "ensureBootFiles: starting");
 
         // <rootdir>/dev/
         File devDir = new File(getRootfsDir(context), "dev");
+        Log.i(TAG, "ensureBootFiles: creating dev directories");
         ensureDir(new File(devDir, "input"));
         ensureDir(new File(devDir, "socket"));
         ensureDir(new File(devDir, "maps"));
 
         ensureDir(new File(context.getDataDir(), "socket"));
 
+        Log.i(TAG, "ensureBootFiles: creating loader symlink");
         createLoaderSymlink(context);
 
+        Log.i(TAG, "ensureBootFiles: killing orphan processes");
         killOrphanProcess();
 
+        Log.i(TAG, "ensureBootFiles: saving last kmsg");
         saveLastKmsg(context);
+        
+        Log.i(TAG, "ensureBootFiles: completed");
     }
 
     private static void createLoaderSymlink(Context context) {
@@ -159,11 +173,17 @@ public final class RomManager {
         File appProcess64 = new File(rootfsDir, "system/bin/app_process64");
         File systemBuildProp = new File(rootfsDir, "system/build.prop");
         
+        Log.i(TAG, "romExist: checking rootfsDir=" + rootfsDir.getAbsolutePath());
+        Log.i(TAG, "romExist: init exists=" + initFile.exists());
+        Log.i(TAG, "romExist: app_process64 exists=" + appProcess64.exists());
+        Log.i(TAG, "romExist: build.prop exists=" + systemBuildProp.exists());
+        
         // ROM exists only if init AND critical system files exist
         boolean exists = initFile.exists() && appProcess64.exists() && systemBuildProp.exists();
         if (initFile.exists() && !exists) {
-            Log.w(TAG, "ROM appears corrupted - init exists but critical files missing. Will re-extract.");
+            Log.w(TAG, "romExist: ROM appears corrupted - init exists but critical files missing. Will re-extract.");
         }
+        Log.i(TAG, "romExist: returning " + exists);
         return exists;
     }
 
@@ -232,13 +252,18 @@ public final class RomManager {
     }
 
     public static void extractRootfs(Context context, boolean romExist, boolean needsUpgrade, boolean forceInstall, boolean use3rdRom) {
+        Log.i(TAG, "extractRootfs: starting extraction, romExist=" + romExist + ", needsUpgrade=" + needsUpgrade + 
+              ", forceInstall=" + forceInstall + ", use3rdRom=" + use3rdRom);
 
         // force remove system dir to avoiding wired issues
+        Log.i(TAG, "extractRootfs: removing system partition");
         removeSystemPartition(context);
+        Log.i(TAG, "extractRootfs: removing vendor partition");
         removeVendorPartition(context);
 
         if (!romExist) {
             // first init
+            Log.i(TAG, "extractRootfs: ROM does not exist, extracting from assets");
             extractRootfsInAssets(context);
             return;
         }
@@ -246,32 +271,39 @@ public final class RomManager {
         if (forceInstall) {
             if (use3rdRom) {
                 // install 3rd rom
+                Log.i(TAG, "extractRootfs: force install 3rd party ROM");
                 boolean success = extract3rdRootfs(context);
                 if (!success) {
+                    Log.e(TAG, "extractRootfs: 3rd party ROM extraction failed");
                     showRootfsInstallationFailure(context);
                     return;
                 }
             } else {
                 // factory reset!!
+                Log.i(TAG, "extractRootfs: factory reset, extracting from assets");
                 if (!extractRootfsInAssets(context)) {
+                    Log.e(TAG, "extractRootfs: factory reset extraction failed");
                     showRootfsInstallationFailure(context);
                     return;
                 }
             }
 
             // force install finish, reset the state.
+            Log.i(TAG, "extractRootfs: force install completed, resetting flag");
             AppKV.setBooleanConfig(context, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
         } else {
             if (use3rdRom) {
-                Log.w(TAG, "WTF? 3rd ROM must be force install!");
+                Log.w(TAG, "extractRootfs: WTF? 3rd ROM must be force install!");
             }
             if (needsUpgrade) {
-                Log.i(TAG, "upgrade factory rom..");
+                Log.i(TAG, "extractRootfs: upgrading factory ROM");
                 if (!extractRootfsInAssets(context)) {
+                    Log.e(TAG, "extractRootfs: upgrade extraction failed");
                     showRootfsInstallationFailure(context);
                 }
             }
         }
+        Log.i(TAG, "extractRootfs: completed");
     }
 
     private static void showRootfsInstallationFailure(Context context) {

@@ -14,6 +14,7 @@ package io.twoyi;
 
 import android.content.Context;
 import android.content.Intent;
+import android.util.Log;
 
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
@@ -30,6 +31,7 @@ import io.twoyi.utils.LogEvents;
 
 public class TwoyiStatusManager {
 
+    private static final String TAG = "TwoyiStatusManager";
     private static final TwoyiStatusManager INSTANCE = new TwoyiStatusManager();
     private TwoyiStatusManager() {
     }
@@ -44,39 +46,54 @@ public class TwoyiStatusManager {
     }
 
     public void updateVisibility(boolean visible) {
+        Log.i(TAG, "updateVisibility: " + visible);
         mShown.set(visible);
     }
 
     public void markStarted() {
+        Log.i(TAG, "markStarted: called, current mStarted=" + mStarted.get());
         if (mStarted.compareAndSet(false, true)) {
+            Log.i(TAG, "markStarted: set to true, waiting on boot latch");
             try {
                 mBootLatch.await();
+                Log.i(TAG, "markStarted: boot latch passed");
             } catch (BrokenBarrierException | InterruptedException e) {
+                Log.e(TAG, "markStarted: exception waiting on boot latch", e);
                 LogEvents.trackError(e);
             }
+        } else {
+            Log.i(TAG, "markStarted: already started, skipping");
         }
     }
 
     public boolean isStarted() {
-        return mStarted.get();
+        boolean started = mStarted.get();
+        Log.i(TAG, "isStarted: " + started);
+        return started;
     }
 
     public void reset() {
+        Log.i(TAG, "reset: resetting state");
         mStarted.set(false);
         mBootLatch.reset();
     }
 
     public boolean waitBoot(long timeout, TimeUnit unit) throws InterruptedException, BrokenBarrierException {
+        Log.i(TAG, "waitBoot: waiting for " + timeout + " " + unit);
         try {
             mBootLatch.await(timeout, unit);
+            Log.i(TAG, "waitBoot: boot completed successfully");
             return true;
         } catch (TimeoutException e) {
+            Log.e(TAG, "waitBoot: timeout waiting for boot");
             return false;
         }
     }
 
     public void switchOs(Context context) {
+        Log.i(TAG, "switchOs: mStarted=" + mStarted.get() + ", mShown=" + mShown.get());
         if (!mStarted.get()) {
+            Log.i(TAG, "switchOs: not started, returning");
             return;
         }
 
