@@ -46,3 +46,10 @@ jobs:
 
       - name: Build with Gradle
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: twoyi-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
