@@ -290,7 +290,12 @@ public final class RomManager {
     }
 
     public static int extractRootfs(Context context, File rootfsTgz) {
-        File outputDir = context.getDataDir();
+        File outputDir = getRootfsDir(context);
+        // Ensure the rootfs directory exists
+        if (!outputDir.exists() && !outputDir.mkdirs()) {
+            Log.e(TAG, "Failed to create rootfs directory: " + outputDir);
+            return -1;
+        }
         try (FileInputStream fis = new FileInputStream(rootfsTgz);
              BufferedInputStream bis = new BufferedInputStream(fis);
              GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
