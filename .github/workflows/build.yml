@@ -33,6 +33,9 @@ jobs:
       with:
         targets: aarch64-linux-android
 
+    - name: Install cargo-xdk
+      run: cargo install cargo-xdk
+
     - name: Setup NDK
       uses: nttld/setup-ndk@v1
       id: setup-ndk
@@ -42,7 +45,15 @@ jobs:
 
     - name: Download and convert rootfs
       run: |
-        mkdir -p ap
+        mkdir -p app/src/main/assets
+        curl -L -o rootfs.7z "https://github.com/topminipie/twoyi/releases/download/0.7.5-rom/rootfs.7z"
+        sudo apt-get update && sudo apt-get install -y p7zip-full
+        7z x rootfs.7z -o./rootfs_extracted -snl
+        cd rootfs_extracted/rootfs
+        tar -czvf ../../app/src/main/assets/rootfs.tgz .
+        cd ../..
+        cp rootfs_extracted/rootfs/rom.ini app/src/main/assets/rom.ini
+        rm -rf rootfs.7z rootfs_extracted
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
