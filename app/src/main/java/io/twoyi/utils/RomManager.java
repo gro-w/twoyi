@@ -300,9 +300,25 @@ public final class RomManager {
                 return -1;
             }
             
+            String destDirPath = destDir.getCanonicalPath();
+            
             TarArchiveEntry entry;
             while ((entry = tais.getNextEntry()) != null) {
-                File destFile = new File(destDir, entry.getName());
+                String entryName = entry.getName();
+                
+                // Validate entry name to prevent path traversal attacks
+                if (entryName.contains("..") || entryName.startsWith("/")) {
+                    Log.w(TAG, "Skipping potentially malicious entry: " + entryName);
+                    continue;
+                }
+                
+                File destFile = new File(destDir, entryName);
+                
+                // Additional check: ensure the destination is within the target directory
+                if (!destFile.getCanonicalPath().startsWith(destDirPath)) {
+                    Log.w(TAG, "Skipping entry outside target directory: " + entryName);
+                    continue;
+                }
                 
                 if (entry.isDirectory()) {
                     if (!destFile.exists() && !destFile.mkdirs()) {
