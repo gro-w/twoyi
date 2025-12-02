@@ -50,7 +50,7 @@ public final class RomManager {
 
     private static final String TAG = "RomManager";
 
-    private static final String ROOTFS_NAME = "rootfs.tar.gz";
+    private static final String ROOTFS_NAME = "rootfs.tgz";
 
     private static final String ROM_INFO_FILE = "rom.ini";
 
@@ -58,7 +58,7 @@ public final class RomManager {
 
     private static final String LOADER_FILE = "libloader.so";
 
-    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.tar.gz";
+    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.tgz";
 
     private RomManager() {
     }
