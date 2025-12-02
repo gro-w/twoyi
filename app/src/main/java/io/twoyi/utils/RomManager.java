@@ -289,17 +289,46 @@ public final class RomManager {
     }
 
     public static int extractRootfs(Context context, File rootfsTarGz) {
+        File destDir = getRootfsDir(context);
+        if (!destDir.exists() && !destDir.mkdirs()) {
+            Log.e(TAG, "Failed to create rootfs directory: " + destDir);
+            return -1;
+        }
+        
+        // Use native tar command to preserve all Unix attributes (permissions, symlinks, hard links, etc.)
+        // This is equivalent to: tar xf rootfs.tgz -C /data/data/io.twoyi/rootfs
+        Shell shell = ShellUtil.newSh();
+        String tarPath = rootfsTarGz.getAbsolutePath();
+        String destPath = destDir.getAbsolutePath();
+        
+        // Execute tar extraction with full preservation
+        Shell.Result result = shell.newJob()
+                .add("cd " + destPath)
+                .add("tar xzf " + tarPath + " --no-same-owner 2>&1")
+                .exec();
+        
+        if (result.isSuccess()) {
+            Log.i(TAG, "Rootfs extracted successfully using tar command");
+            return 0;
+        } else {
+            // Log error output
+            for (String line : result.getOut()) {
+                Log.e(TAG, "tar output: " + line);
+            }
+            Log.e(TAG, "tar command failed with code: " + result.getCode());
+            
+            // Fallback to Java-based extraction if tar command fails
+            Log.i(TAG, "Falling back to Java-based extraction");
+            return extractRootfsJava(context, rootfsTarGz, destDir);
+        }
+    }
+    
+    private static int extractRootfsJava(Context context, File rootfsTarGz, File destDir) {
         try (FileInputStream fis = new FileInputStream(rootfsTarGz);
              BufferedInputStream bis = new BufferedInputStream(fis);
              GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
              TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
 
-            File destDir = getRootfsDir(context);
-            if (!destDir.exists() && !destDir.mkdirs()) {
-                Log.e(TAG, "Failed to create rootfs directory: " + destDir);
-                return -1;
-            }
-            
             String destDirPath = destDir.getCanonicalPath();
             
             TarArchiveEntry entry;
@@ -321,7 +350,7 @@ public final class RomManager {
                 
                 // Additional check: ensure the destination is within the target directory
                 // Skip this check for symlinks as they may point outside initially
-                if (!entry.isSymbolicLink()) {
+                if (!entry.isSymbolicLink() && !entry.isLink()) {
                     try {
                         String canonicalDestPath = destFile.getCanonicalPath();
                         if (!canonicalDestPath.equals(destDirPath) && 
@@ -335,13 +364,14 @@ public final class RomManager {
                     }
                 }
                 
+                // Ensure parent directory exists
+                File parent = destFile.getParentFile();
+                if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                    Log.e(TAG, "Failed to create parent directory: " + parent);
+                }
+                
                 if (entry.isSymbolicLink()) {
                     // Handle symbolic links
-                    File parent = destFile.getParentFile();
-                    if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                        Log.e(TAG, "Failed to create parent directory for symlink: " + parent);
-                    }
-                    
                     String linkTarget = entry.getLinkName();
                     Path linkPath = destFile.toPath();
                     Path targetPath = Paths.get(linkTarget);
@@ -354,16 +384,29 @@ public final class RomManager {
                     } catch (IOException e) {
                         Log.w(TAG, "Failed to create symbolic link: " + entryName + " -> " + linkTarget, e);
                     }
+                } else if (entry.isLink()) {
+                    // Handle hard links
+                    String linkTarget = entry.getLinkName();
+                    File targetFile = new File(destDir, linkTarget);
+                    Path linkPath = destFile.toPath();
+                    Path targetPath = targetFile.toPath();
+                    
+                    try {
+                        // Delete existing file/link if exists
+                        Files.deleteIfExists(linkPath);
+                        // Create hard link
+                        Files.createLink(linkPath, targetPath);
+                    } catch (IOException e) {
+                        Log.w(TAG, "Failed to create hard link: " + entryName + " -> " + linkTarget, e);
+                    }
                 } else if (entry.isDirectory()) {
                     if (!destFile.exists() && !destFile.mkdirs()) {
                         Log.e(TAG, "Failed to create directory: " + destFile);
                     }
+                    // Set directory permissions
+                    setFilePermissions(destFile, entry.getMode());
                 } else {
-                    File parent = destFile.getParentFile();
-                    if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                        Log.e(TAG, "Failed to create parent directory: " + parent);
-                    }
-                    
+                    // Regular file
                     try (FileOutputStream fos = new FileOutputStream(destFile);
                          BufferedOutputStream bos = new BufferedOutputStream(fos)) {
                         byte[] buffer = new byte[65536];
@@ -372,21 +415,8 @@ public final class RomManager {
                             bos.write(buffer, 0, len);
                         }
                     }
-                    
-                    // Preserve file permissions from tar archive
-                    int mode = entry.getMode();
-                    if (mode != 0) {
-                        // Set executable permission if any execute bit is set (owner, group, or other)
-                        boolean isExecutable = (mode & 0111) != 0;
-                        // Set readable permission if any read bit is set
-                        boolean isReadable = (mode & 0444) != 0;
-                        // Set writable permission if owner write bit is set
-                        boolean isWritable = (mode & 0200) != 0;
-                        
-                        destFile.setExecutable(isExecutable, false);
-                        destFile.setReadable(isReadable, false);
-                        destFile.setWritable(isWritable, false);
-                    }
+                    // Set file permissions
+                    setFilePermissions(destFile, entry.getMode());
                 }
             }
             return 0;
@@ -395,6 +425,17 @@ public final class RomManager {
             LogEvents.trackError(e);
             return -1;
         }
+    }
+    
+    private static void setFilePermissions(File file, int mode) {
+        if (mode == 0) {
+            return;
+        }
+        
+        // Use chmod command for proper Unix permission setting
+        Shell shell = ShellUtil.newSh();
+        String octalMode = String.format("%o", mode & 0777);
+        shell.newJob().add("chmod " + octalMode + " " + file.getAbsolutePath()).exec();
     }
 
     public static boolean extractRootfsInAssets(Context context) {
