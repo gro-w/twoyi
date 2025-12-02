@@ -192,7 +192,9 @@ public final class RomManager {
             TarArchiveEntry entry;
 
             while ((entry = tais.getNextTarEntry()) != null) {
-                if (entry.getName().equals("rom.ini")) {
+                // Check for rom.ini in either root or rootfs directory
+                String entryName = entry.getName();
+                if (entryName.equals("rom.ini") || entryName.equals("rootfs/rom.ini")) {
                     byte[] content = new byte[(int) entry.getSize()];
                     int bytesRead = 0;
                     while (bytesRead < content.length) {
@@ -302,6 +304,19 @@ public final class RomManager {
                     if (!outputFile.exists() && !outputFile.mkdirs()) {
                         Log.e(TAG, "Failed to create directory: " + outputFile);
                     }
+                } else if (entry.isSymbolicLink()) {
+                    // Handle symbolic links before regular files
+                    File parent = outputFile.getParentFile();
+                    if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                        Log.e(TAG, "Failed to create parent directory: " + parent);
+                    }
+                    String linkName = entry.getLinkName();
+                    try {
+                        Files.deleteIfExists(outputFile.toPath());
+                        Files.createSymbolicLink(outputFile.toPath(), Paths.get(linkName));
+                    } catch (IOException e) {
+                        Log.e(TAG, "Failed to create symlink: " + outputFile + " -> " + linkName, e);
+                    }
                 } else {
                     // Ensure parent directory exists
                     File parent = outputFile.getParentFile();
@@ -314,17 +329,6 @@ public final class RomManager {
                         int count;
                         while ((count = tais.read(buffer)) != -1) {
                             os.write(buffer, 0, count);
-                        }
-                    }
-
-                    // Handle symbolic links
-                    if (entry.isSymbolicLink()) {
-                        String linkName = entry.getLinkName();
-                        try {
-                            Files.deleteIfExists(outputFile.toPath());
-                            Files.createSymbolicLink(outputFile.toPath(), Paths.get(linkName));
-                        } catch (IOException e) {
-                            Log.e(TAG, "Failed to create symlink: " + outputFile + " -> " + linkName, e);
                         }
                     }
                 }
