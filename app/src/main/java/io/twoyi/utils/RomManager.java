@@ -153,8 +153,18 @@ public final class RomManager {
     public static final RomInfo DEFAULT_ROM_INFO = new RomInfo();
 
     public static boolean romExist(Context context) {
-        File initFile = new File(getRootfsDir(context), "init");
-        return initFile.exists();
+        File rootfsDir = getRootfsDir(context);
+        File initFile = new File(rootfsDir, "init");
+        // Also check for critical system files to detect corrupted installation
+        File appProcess64 = new File(rootfsDir, "system/bin/app_process64");
+        File systemBuildProp = new File(rootfsDir, "system/build.prop");
+        
+        // ROM exists only if init AND critical system files exist
+        boolean exists = initFile.exists() && appProcess64.exists() && systemBuildProp.exists();
+        if (initFile.exists() && !exists) {
+            Log.w(TAG, "ROM appears corrupted - init exists but critical files missing. Will re-extract.");
+        }
+        return exists;
     }
 
     public static boolean needsUpgrade(Context context) {
